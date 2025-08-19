@@ -1,28 +1,4 @@
-# from flask import Flask, render_template, jsonify, request
-# from detector import detect_drowsiness
-# import cv2
-# import numpy as np
 
-# app = Flask(__name__)
-
-# @app.route('/')
-# def index():
-#     return render_template('index.html')
-
-# @app.route('/detect', methods=['POST'])
-# def detect():
-#     file = request.files.get('frame')
-#     if file:
-#         npimg = np.frombuffer(file.read(), np.uint8)
-#         img = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
-
-#         status = detect_drowsiness(img)
-#         return jsonify({'status': status})
-#     else:
-#         return jsonify({'status': 'Không nhận được ảnh'}), 400
-
-# if __name__ == '__main__':
-#     app.run(debug=True)
 from flask import Flask, render_template, jsonify, request
 from hotroweb import detect_drowsiness
 import cv2
