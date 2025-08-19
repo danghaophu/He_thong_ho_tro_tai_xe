@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Giám sát Buồn Ngủ</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f0f2f5;
+      display: flex;
+    }
+
+    .sidebar {
+      background-color: #2c3e50;
+      color: rgb(41, 23, 23);
+      padding: 20px;
+      width: 250px;
+      box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+    }
+
+    .sidebar h2 {
+      font-size: 18px;
+      margin-bottom: 10px;
+    }
+
+    .sidebar select, .sidebar button {
+      width: 100%;
+      margin-top: 10px;
+      padding: 8px;
+      font-size: 14px;
+      border-radius: 5px;
+      border: 1px solid #ccc;
+    }
+
+    #logPanel {
+      margin-top: 15px;
+      width: 100%;
+      height: 300px;
+      overflow-y: auto;
+      background-color: #f9f9f9;
+      border: 2px solid #ccc;
+      padding: 10px;
+      font-size: 14px;
+      border-radius: 8px;
+      box-shadow: inset 0 0 5px rgba(0,0,0,0.1);
+      display: none;
+    }
+
+    .content {
+      flex: 1;
+      padding: 20px;
+    }
+
+    #status {
+      font-size: 20px;
+      margin-bottom: 10px;
+      font-weight: bold;
+      color:  #e74c3c;
+    }
+
+    #video {
+      max-width: 90%;
+      border-radius: 10px;
+      margin-bottom: 20px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.3);
+    }
+  </style>
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>Ngôn ngữ</h2>
+    <select id="lang">
+      <option value="vi">Tiếng Việt</option>
+      <option value="fr">Français</option>
+    </select>
+
+    <button onclick="toggleLog()">📋 Nhật ký</button>
+    <div id="logPanel"></div>
+  </div>
+
+  <div class="content">
+    <p id="status">Đang khởi động...</p>
+    <video id="video" autoplay muted></video>
+    <canvas id="canvas" style="display:none;"></canvas>
+  </div>
+
+  <!-- Âm thanh cảnh báo -->
+  <audio id="eye_vi" src="/static/eye_vi.m4a"></audio>
+  <audio id="no_face_vi" src="/static/regarder_vi.m4a"></audio>
+  <audio id="no_face_fr" src="/static/regarder.mp3"></audio>
+  <audio id="eye_fr" src="/static/eye.mp3"></audio>
+  <audio id="phone_vi" src="/static/phone_vi.m4a"></audio>
+  <audio id="phone_fr" src="/static/phone.mp3"></audio>
+  <audio id="regarder_vi" src="/static/regarder_vi.m4a"></audio>
+  <audio id="regarder_fr" src="/static/regarder.mp3"></audio>
+  <audio id="reposer_vi" src="/static/ropose_vi.m4a"></audio>
+  <audio id="reposer_fr" src="/static/reposer.mp3"></audio>
+
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const statusText = document.getElementById('status');
+    const langSelect = document.getElementById('lang');
+    const logPanel = document.getElementById('logPanel');
+
+    let currentStatus = '';
+    let currentLang = langSelect.value;
+
+    langSelect.addEventListener('change', () => {
+      currentLang = langSelect.value;
+    });
+
+    function toggleLog() {
+      logPanel.style.display = (logPanel.style.display === "none") ? "block" : "none";
+    }
+
+    function addLog(status) {
+      const now = new Date().toLocaleTimeString();
+      const entry = document.createElement('p');
+      entry.textContent = `[${now}] → ${status}`;
+      logPanel.prepend(entry);
+    }
+
+    function playSound(status) {
+      const audioId = `${status}_${currentLang}`;
+      const audio = document.getElementById(audioId);
+      if (audio) {
+        audio.play();
+      }
+    }
+
+    function sendFrame() {
+      const context = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      context.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(blob => {
+        const formData = new FormData();
+        formData.append('frame', blob);
+
+        fetch('/detect', {
+          method: 'POST',
+          body: formData
+        })
+        .then(res => res.json())
+        .then(data => {
+          const status = data.status;
+          statusText.textContent = `Trạng thái: ${status}`;
+
+          if (status !== currentStatus && status !== "Bình thường") {
+            currentStatus = status;
+            playSound(status);
+            addLog(status);
+          }
+        });
+      }, 'image/jpeg');
+    }
+
+    // Truy cập webcam
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => {
+        video.srcObject = stream;
+        setInterval(sendFrame, 2000); // gửi mỗi 2 giây
+      })
+      .catch(err => {
+        statusText.textContent = 'Không thể truy cập webcam!';
+        console.error(err);
+      });
+  </script>
+</body>
+</html>

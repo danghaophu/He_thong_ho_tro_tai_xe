@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <title>Giám sát Buồn Ngủ + Bản đồ</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <style>
+    body { margin: 0; font-family: Arial, sans-serif; display: flex; height:100vh; }
+    .sidebar { width: 250px; background:#2c3e50; padding:20px; color:#fff; box-shadow:2px 0 5px rgba(0,0,0,0.1); }
+    .sidebar h2 { font-size:18px; color:#fff; }
+    .sidebar select, .sidebar button { width:100%; margin-top:10px; padding:8px; font-size:14px; border-radius:5px; border:none; }
+    #logPanel { margin-top:15px; height:300px; overflow-y:auto; background:#f9f9f9; color:#333; padding:10px; font-size:14px; border-radius:8px; display:none; }
+    .content { flex:1; padding:20px; position:relative; }
+    #status { font-size:20px; margin-bottom:10px; font-weight:bold; color:#e74c3c; }
+    video { width: 640px; height:480px; border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,0.3); }
+    #map { height: 300px; width: 100%; margin-top:20px; display:none; border-radius:10px; }
+    #canvas { display:none; }
+  </style>
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>Ngôn ngữ</h2>
+    <select id="lang"><option value="vi">Tiếng Việt</option><option value="fr">Français</option></select>
+    <button onclick="toggleLog()">📋 Nhật ký</button>
+    <div id="logPanel"></div>
+  </div>
+
+  <div class="content">
+    <p id="status">Đang khởi động...</p>
+    <video id="video" autoplay muted></video>
+    <canvas id="canvas"></canvas>
+    <div id="map"></div>
+  </div>
+
+  <!-- Âm thanh cảnh báo -->
+  <audio id="eye_vi" src="/static/eye_vi.m4a"></audio>
+  <audio id="no_face_vi" src="/static/regarder_vi.m4a"></audio>
+  <audio id="no_face_fr" src="/static/regarder.mp3"></audio>
+  <audio id="eye_fr" src="/static/eye.mp3"></audio>
+  <audio id="phone_vi" src="/static/phone_vi.m4a"></audio>
+  <audio id="phone_fr" src="/static/phone.mp3"></audio>
+  <audio id="regarder_vi" src="/static/regarder_vi.m4a"></audio>
+  <audio id="regarder_fr" src="/static/regarder.mp3"></audio>
+  <audio id="reposer_vi" src="/static/ropose_vi.m4a"></audio>
+  <audio id="reposer_fr" src="/static/reposer.mp3"></audio>
+  <!-- ... các thẻ audio giữ nguyên ... -->
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script>
+    const video = document.getElementById('video');
+    const canvas = document.getElementById('canvas');
+    const statusText = document.getElementById('status');
+    const logPanel = document.getElementById('logPanel');
+    const langSelect = document.getElementById('lang');
+    const mapDiv = document.getElementById('map');
+
+    let currentStatus = '';
+    let lastEyeTime = 0;
+    let mapInitialized = false;
+    let leafletMap, hotelLayer;
+    let userLat = null, userLon = null;
+
+    navigator.mediaDevices.getUserMedia({ video: true })
+      .then(stream => { video.srcObject = stream; })
+      .catch(err => { statusText.textContent = "Không truy cập webcam!"; });
+
+    navigator.geolocation.getCurrentPosition(pos => {
+      userLat = pos.coords.latitude;
+      userLon = pos.coords.longitude;
+    });
+
+    function toggleLog(){
+      logPanel.style.display = (logPanel.style.display==='none')?'block':'none';
+    }
+
+  function addLog(s) {
+    const statusMessages = {
+      vi: {
+        eye: "😴 Bạn đang nhắm mắt",
+        phone: "📱 Bạn đang nghe điện thoại",
+        reposer: "😪 Bạn đang ngáp",
+        regarder: "👀 Bạn mất tập trung",
+        normal: "✅ Tình trạng bình thường"
+      },
+      fr: {
+        eye: "😴 Vous avez les yeux fermés",
+        phone: "📱 Vous utilisez le téléphone",
+        reposer: "😪 Vous baillez",
+        regarder: "👀 Vous ne regardez pas la route",
+        normal: "✅ État normal"
+      }
+    };
+
+    const lang = langSelect.value;
+    const msg = statusMessages[lang][s] || s;
+    const now = new Date().toLocaleTimeString();
+    const p = document.createElement('p');
+    p.textContent = `[${now}] → ${msg}`;
+    logPanel.prepend(p);
+  }
+
+
+    function playSound(status){
+      const audio = document.getElementById(`${status}_${langSelect.value}`);
+      if(audio) audio.play();
+    }
+
+    function showHotels(lat, lon) {
+      mapDiv.style.display = "block";
+      if (!mapInitialized) {
+        leafletMap = L.map('map').setView([lat, lon], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; OpenStreetMap contributors'
+        }).addTo(leafletMap);
+        hotelLayer = L.layerGroup().addTo(leafletMap);
+        mapInitialized = true;
+      } else {
+        leafletMap.setView([lat, lon], 15);
+        hotelLayer.clearLayers();
+      }
+
+      L.marker([lat, lon]).addTo(hotelLayer).bindPopup("Bạn ở đây").openPopup();
+
+      const delta = 0.01;
+      const left = lon - delta;
+      const right = lon + delta;
+      const top = lat + delta;
+      const bottom = lat - delta;
+      const url = `https://nominatim.openstreetmap.org/search?format=json&q=hotel&bounded=1&limit=10&viewbox=${left},${top},${right},${bottom}`;
+
+      fetch(url)
+        .then(res => res.json())
+        .then(data => {
+          if (data.length === 0) {
+            alert("Không tìm thấy khách sạn gần bạn.");
+          }
+          data.forEach(hotel => {
+            const lat = parseFloat(hotel.lat);
+            const lon = parseFloat(hotel.lon);
+            const name = hotel.display_name;
+            L.marker([lat, lon]).addTo(hotelLayer).bindPopup(`<b>Khách sạn:</b><br>${name}`);
+          });
+        })
+        .catch(err => {
+          console.error("Lỗi khi tìm khách sạn:", err);
+          alert("Không thể lấy dữ liệu khách sạn.");
+        });
+    }
+
+    function sendFrame(){
+      const ctx = canvas.getContext('2d');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      canvas.toBlob(blob => {
+        const fd = new FormData();
+        fd.append('frame', blob);
+        fd.append('lang', langSelect.value);
+        fetch('/detect', { method: 'POST', body: fd })
+          .then(res => res.json())
+          .then(data => {
+            const s = data.status;
+            const statusMessages = {
+                                    vi: {
+                                      eye: "😴 Bạn đang nhắm mắt",
+                                      phone: "📱 Bạn đang nghe điện thoại",
+                                      reposer: "😪 Bạn đang ngáp",
+                                      regarder: "👀 Bạn mất tập trung",
+                                      normal: "✅ Tình trạng bình thường"
+                                    },
+                                    fr: {
+                                      eye: "😴 Vous avez les yeux fermés",
+                                      phone: "📱 Vous utilisez le téléphone",
+                                      reposer: "😪 Vous baillez",
+                                      regarder: "👀 Vous ne regardez pas la route",
+                                      normal: "✅ État normal"
+                                    }
+                                  };
+
+            const currentLang = langSelect.value;
+            const message = statusMessages[currentLang][s] || `Trạng thái: ${s}`;
+            statusText.textContent = message;
+
+            if(s !== currentStatus && s !== 'normal') {
+              currentStatus = s;
+              playSound(s);
+              addLog(s);
+              if (s === 'eye') {
+                lastEyeTime = Date.now();
+                setTimeout(() => {
+                  if (currentStatus === 'eye' && Date.now() - lastEyeTime >= 5000) {
+                    if (userLat && userLon) {
+                      showHotels(userLat, userLon);
+                    }
+                  }
+                }, 5000);
+              }
+            }
+          });
+      }, 'image/jpeg');
+    }
+
+    setInterval(sendFrame, 2000);
+  </script>
+</body>
+</html>
